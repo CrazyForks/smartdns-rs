@@ -1,6 +1,6 @@
 [package]
 name = "smartdns"
-version = "0.8.7"
+version = "0.8.8-alpha.1"
 authors = ["YISH <mokeyish@hotmail.com>"]
 edition = "2021"
 rust-version = "1.75.0"
@@ -25,9 +25,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(nightly)'] }
 
 [features]
 
-default = ["dns-over-tls", "dns-over-https", "dns-over-quic", "dns-over-h3", "dnssec", "service", "nft", "self-update" ]
+default = ["dns-over-tls", "dns-over-https", "dns-over-quic", "dns-over-h3", "dnssec", "service", "nft", "nom-recipes-all", "self-update" ]
 
-homebrew = ["dns-over-tls", "dns-over-https", "dns-over-quic", "dns-over-h3", "dnssec", "service", "nft" ]
+homebrew = ["dns-over-tls", "dns-over-https", "dns-over-quic", "dns-over-h3", "dnssec", "service", "nft", "nom-recipes-all" ]
+
+nom-recipes-all =["nom-recipes-ipv4", "nom-recipes-ipv6"]
+nom-recipes-ipv4 = []
+nom-recipes-ipv6 = []
 
 failed_tests = []
 disable_icmp_ping = []
@@ -83,6 +87,7 @@ hostname = { git = "https://github.com/mokeyish/hostname.git", branch = "dev" }
 # enum_dispatch = { git = "https://gitlab.com/mokeyish/enum_dispatch.git", branch = "master"}
 # axum = { git = "https://github.com/tokio-rs/axum.git", rev = "8854e66" }
 # boomphf ={ path = "./target/patch/boomphf-0.6.0"}
+rustls-pki-types = { git = "https://github.com/mokeyish/pki-types.git", rev = "1.9.0.smartdns.1" }
 
 [dependencies]
 cfg-if = "1"
@@ -136,12 +141,12 @@ tracing-subscriber = { version = "0.3", features = [
 # tracing-appender = "0.2"
 
 # hickory dns
-hickory-proto = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.4", version = "0.25.0-alpha.1", features = ["serde-config"]}
-hickory-resolver = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.4", version = "0.25.0-alpha.1", features = [
-  "serde-config",
+hickory-proto = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.5", version = "0.25.0-alpha.2", features = ["serde"]}
+hickory-resolver = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.5", version = "0.25.0-alpha.2", features = [
+  "serde",
   "system-config",
 ] }
-hickory-server = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.4", version = "0.25.0-alpha.1", features = ["resolver"], optional = true }
+hickory-server = { git = "https://github.com/mokeyish/hickory-dns.git", rev = "0.25.0-smartdns.5", version = "0.25.0-alpha.2", features = ["resolver"], optional = true }
 quinn = { version = "0.11.2", default-features = false }
 
 # ssl
@@ -196,6 +201,7 @@ self_update = { version = "0.40.0", default-features = false, features=["archive
 windows = { version = "0.57", features = [
   "Win32_System_Console",
   "Win32_Foundation",
+  "Win32_Networking", "Win32_Networking_WinSock", "Win32_System_IO", # set UDP_CONNRESET off
 ] }
 windows-service = "0.7.0"
 self_update = { version = "0.40.0", default-features = false, features=["archive-zip", "compression-zip-deflate", "rustls"], optional = true }

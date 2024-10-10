@@ -15,11 +15,13 @@ mod domain_set;
 mod file_mode;
 mod forward_rule;
 mod glob_pattern;
+mod https_record;
 mod ipnet;
 mod listener;
 mod log_level;
 mod nameserver;
 mod nftset;
+mod nom_recipes;
 mod options;
 mod path;
 mod proxy_config;
@@ -27,6 +29,7 @@ mod record_type;
 mod response_mode;
 mod speed_mode;
 mod srv;
+mod svcb;
 
 use super::*;
 
@@ -88,10 +91,12 @@ pub enum OneConfig {
     CacheFile(PathBuf),
     CachePersist(bool),
     CacheSize(usize),
+    CacheCheckpointTime(u64),
     CaFile(PathBuf),
     CaPath(PathBuf),
-    CNAME(ConfigForDomain<CName>),
-    SRV(ConfigForDomain<SRV>),
+    CNAME(ConfigForDomain<CNameRule>),
+    SrvRecord(ConfigForDomain<SRV>),
+    HttpsRecord(ConfigForDomain<HttpsRecordRule>),
     ConfFile(PathBuf),
     DnsmasqLeaseFile(PathBuf),
     Domain(Name),
@@ -118,7 +123,7 @@ pub enum OneConfig {
     LogFilter(String),
     MaxReplyIpNum(u8),
     MdnsLookup(bool),
-    NftSet(ConfigForDomain<Vec<ConfigForIP<NftsetConfig>>>),
+    NftSet(ConfigForDomain<Vec<ConfigForIP<NFTsetConfig>>>),
     NumWorkers(usize),
     PrefetchDomain(bool),
     ProxyConfig(NamedProxyConfig),
@@ -162,13 +167,20 @@ pub fn parse_config(input: &str) -> IResult<&str, OneConfig> {
         map(parse_item("blacklist-ip"), OneConfig::BlacklistIp),
         map(parse_item("cache-file"), OneConfig::CacheFile),
         map(parse_item("cache-persist"), OneConfig::CachePersist),
+        map(parse_item("cache-size"), OneConfig::CacheSize),
+        map(
+            parse_item("cache-checkpoint-time"),
+            OneConfig::CacheCheckpointTime,
+        ),
         map(parse_item("ca-file"), OneConfig::CaFile),
         map(parse_item("ca-path"), OneConfig::CaPath),
         map(parse_item("conf-file"), OneConfig::ConfFile),
-        map(parse_item("cache-size"), OneConfig::CacheSize),
         map(parse_item("domain-rules"), OneConfig::DomainRule),
         map(parse_item("domain-rule"), OneConfig::DomainRule),
         map(parse_item("domain-set"), OneConfig::DomainSetProvider),
+    ));
+
+    let group2 = alt((
         map(
             parse_item("dnsmasq-lease-file"),
             OneConfig::DnsmasqLeaseFile,
@@ -177,9 +189,6 @@ pub fn parse_config(input: &str) -> IResult<&str, OneConfig> {
             parse_item("dualstack-ip-allow-force-AAAA"),
             OneConfig::DualstackIpAllowForceAAAA,
         ),
-    ));
-
-    let group2 = alt((
         map(
             parse_item("dualstack-ip-selection"),
             OneConfig::DualstackIpSelection,
@@ -200,6 +209,7 @@ pub fn parse_config(input: &str) -> IResult<&str, OneConfig> {
         map(parse_item("num-workers"), OneConfig::NumWorkers),
         map(parse_item("domain"), OneConfig::Domain),
         map(parse_item("hosts-file"), OneConfig::HostsFile),
+        map(parse_item("https-record"), OneConfig::HttpsRecord),
         map(parse_item("local-ttl"), OneConfig::LocalTtl),
         map(parse_item("log-console"), OneConfig::LogConsole),
         map(parse_item("log-file-mode"), OneConfig::LogFileMode),
@@ -207,11 +217,11 @@ pub fn parse_config(input: &str) -> IResult<&str, OneConfig> {
         map(parse_item("log-filter"), OneConfig::LogFilter),
         map(parse_item("log-level"), OneConfig::LogLevel),
         map(parse_item("log-num"), OneConfig::LogNum),
-        map(parse_item("log-size"), OneConfig::LogSize),
-        map(parse_item("max-reply-ip-num"), OneConfig::MaxReplyIpNum),
     ));
 
     let group3 = alt((
+        map(parse_item("log-size"), OneConfig::LogSize),
+        map(parse_item("max-reply-ip-num"), OneConfig::MaxReplyIpNum),
         map(parse_item("mdns-lookup"), OneConfig::MdnsLookup),
         map(parse_item("nameserver"), OneConfig::ForwardRule),
         map(parse_item("proxy-server"), OneConfig::ProxyConfig),
@@ -233,7 +243,7 @@ pub fn parse_config(input: &str) -> IResult<&str, OneConfig> {
     ));
 
     let group4 = alt((
-        map(parse_item("srv-record"), OneConfig::SRV),
+        map(parse_item("srv-record"), OneConfig::SrvRecord),
         map(parse_item("resolv-hostname"), OneConfig::ResolvHostname),
         map(parse_item("tcp-idle-time"), OneConfig::TcpIdleTime),
         map(parse_item("nftset"), OneConfig::NftSet),
@@ -259,7 +269,7 @@ mod tests {
                 "",
                 OneConfig::NftSet(ConfigForDomain {
                     domain: Domain::Name("www.example.com".parse().unwrap()),
-                    config: vec![ConfigForIP::V4(NftsetConfig {
+                    config: vec![ConfigForIP::V4(NFTsetConfig {
                         family: "inet",
                         table: "tab".to_string(),
                         name: "dns4".to_string()
@@ -274,7 +284,7 @@ mod tests {
                 "",
                 OneConfig::NftSet(ConfigForDomain {
                     domain: Domain::Name("www.example.com".parse().unwrap()),
-                    config: vec![ConfigForIP::V4(NftsetConfig {
+                    config: vec![ConfigForIP::V4(NFTsetConfig {
                         family: "inet",
                         table: "tab".to_string(),
                         name: "dns4".to_string()

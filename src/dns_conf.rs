@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use crate::config::*;
+use crate::dns::DomainRuleGetter;
 use crate::log;
 use crate::{
     dns_rule::{DomainRuleMap, DomainRuleTreeNode},
@@ -257,10 +258,16 @@ impl RuntimeConfig {
         self.cache.size.unwrap_or(512)
     }
 
-    ///  enable persist cache when restart
+    /// enable persist cache when restart
     #[inline]
     pub fn cache_persist(&self) -> bool {
         self.cache.persist.unwrap_or(false)
+    }
+
+    /// cache save interval
+    #[inline]
+    pub fn cache_checkpoint_time(&self) -> u64 {
+        self.cache.checkpoint_time.unwrap_or(24 * 60 * 60)
     }
 
     /// cache persist file
@@ -384,8 +391,7 @@ impl RuntimeConfig {
 
     #[inline]
     pub fn local_ttl(&self) -> u64 {
-        self.local_ttl
-            .unwrap_or_else(|| self.rr_ttl_min().unwrap_or_default())
+        self.local_ttl.or_else(|| self.rr_ttl_min()).unwrap_or(10)
     }
 
     /// Maximum number of IPs returned to the client|8|number of IPs, 1~16
@@ -537,7 +543,7 @@ impl RuntimeConfig {
         &self.cnames
     }
 
-    pub fn valid_nftsets(&self) -> Vec<&ConfigForIP<NftsetConfig>> {
+    pub fn valid_nftsets(&self) -> Vec<&ConfigForIP<NFTsetConfig>> {
         self.nftsets
             .iter()
             .flat_map(|x| &x.config)
@@ -619,6 +625,7 @@ impl RuntimeConfigBuilder {
             &domain_sets,
             &cfg.cnames,
             &cfg.srv_records,
+            &cfg.https_records,
             &cfg.nftsets,
         );
 
@@ -781,9 +788,11 @@ impl RuntimeConfigBuilder {
                 BindCertKeyPass(v) => self.bind_cert_key_pass = Some(v),
                 CacheFile(v) => self.cache.file = Some(v),
                 CachePersist(v) => self.cache.persist = Some(v),
+                CacheCheckpointTime(v) => self.cache.checkpoint_time = Some(v),
                 CNAME(v) => self.cnames.push(v),
                 ExpandPtrFromAddress(v) => self.expand_ptr_from_address = Some(v),
-                NftSet(config) => self.nftsets.push(config),
+                NftSet(v) => self.nftsets.push(v),
+                HttpsRecord(v) => self.https_records.push(v),
                 Server(server) => self.nameservers.push(server),
                 ResponseMode(mode) => self.response_mode = Some(mode),
                 ResolvHostname(v) => self.resolv_hostname = Some(v),
@@ -826,7 +835,7 @@ impl RuntimeConfigBuilder {
                 ConfFile(v) => self.load_file(v).expect("load_file failed"),
                 DnsmasqLeaseFile(v) => self.dnsmasq_lease_file = Some(v),
                 ResolvFile(v) => self.resolv_file = Some(v),
-                SRV(v) => self.srv_records.push(v),
+                SrvRecord(v) => self.srv_records.push(v),
                 DomainRule(v) => self.domain_rules.push(v),
                 ForwardRule(v) => self.forward_rules.push(v),
                 User(v) => self.user = Some(v),
@@ -918,7 +927,7 @@ fn resolve_filepath<P: AsRef<Path>>(filepath: P, base_file: Option<&PathBuf>) ->
 
 #[cfg(test)]
 mod tests {
-    use crate::libdns::resolver::config::Protocol;
+    use crate::{dns::DomainRuleGetter, libdns::Protocol};
     use byte_unit::Byte;
 
     use crate::config::{HttpsListenerConfig, ListenerAddress, ServerOpts, SslConfig};
@@ -1253,13 +1262,13 @@ mod tests {
 
         assert_eq!(
             cfg.find_domain_rule(&"cloudflare.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
 
         assert_eq!(
             cfg.find_domain_rule(&"google.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::IGN)
         );
     }
@@ -1271,13 +1280,13 @@ mod tests {
             .build();
         assert_eq!(
             cfg.find_domain_rule(&"example.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
 
         assert_eq!(
             cfg.find_domain_rule(&"aa.example.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             None
         );
     }
@@ -1287,13 +1296,13 @@ mod tests {
         let cfg = RuntimeConfig::builder().with("address /*/#").build();
         assert_eq!(
             cfg.find_domain_rule(&"localhost".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
 
         assert_eq!(
             cfg.find_domain_rule(&"aa.example.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             None
         );
     }
@@ -1303,13 +1312,13 @@ mod tests {
         let cfg = RuntimeConfig::builder().with("address /+/#").build();
         assert_eq!(
             cfg.find_domain_rule(&"localhost".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
 
         assert_eq!(
             cfg.find_domain_rule(&"aa.example.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
     }
@@ -1319,13 +1328,13 @@ mod tests {
         let cfg = RuntimeConfig::builder().with("address /./#").build();
         assert_eq!(
             cfg.find_domain_rule(&"localhost".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
 
         assert_eq!(
             cfg.find_domain_rule(&"aa.example.com".parse().unwrap())
-                .and_then(|r| r.get(|n| n.address)),
+                .get(|n| n.address),
             Some(DomainAddress::SOA)
         );
     }
@@ -1524,5 +1533,12 @@ mod tests {
         assert!(!domain_set.contains(&"ads2c.cn".parse().unwrap()));
         // assert!(domain_set.is_match(&Name::from_str("ads3.net").unwrap().into()));
         // assert!(domain_set.is_match(&Name::from_str("q.ads3.net").unwrap().into()));
+    }
+
+    #[test]
+    fn test_parse_https_record() {
+        let cfg = RuntimeConfig::builder().with("https-record #").build();
+        assert_eq!(cfg.https_records.len(), 1);
+        assert_eq!(cfg.https_records[0].config, HttpsRecordRule::SOA);
     }
 }

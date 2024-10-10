@@ -11,16 +11,21 @@ use crate::dns_rule::DomainRuleTreeNode;
 use crate::config::ServerOpts;
 use crate::dns_conf::RuntimeConfig;
 
+pub use crate::dns_rule::DomainRuleGetter;
+
 pub use crate::libdns::proto::{
     error::ProtoErrorKind,
     op,
     rr::{self, rdata::SOA, Name, RData, Record, RecordType},
 };
 
-pub use crate::libdns::resolver::{
-    config::{NameServerConfig, NameServerConfigGroup, Protocol},
-    error::{ResolveError, ResolveErrorKind},
-    lookup::Lookup,
+pub use crate::libdns::{
+    proto::xfer::Protocol,
+    resolver::{
+        config::{NameServerConfig, NameServerConfigGroup},
+        error::{ResolveError, ResolveErrorKind},
+        lookup::Lookup,
+    },
 };
 
 #[derive(Clone)]
@@ -37,10 +42,7 @@ impl DnsContext {
     pub fn new(name: &Name, cfg: Arc<RuntimeConfig>, server_opts: ServerOpts) -> Self {
         let domain_rule = cfg.find_domain_rule(name);
 
-        let no_cache = domain_rule
-            .as_ref()
-            .and_then(|r| r.get(|n| n.no_cache))
-            .unwrap_or_default();
+        let no_cache = domain_rule.get(|n| n.no_cache).unwrap_or_default();
 
         DnsContext {
             cfg,

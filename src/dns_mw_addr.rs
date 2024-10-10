@@ -73,8 +73,19 @@ impl Middleware<DnsContext, DnsRequest, DnsResponse, DnsError> for AddressMiddle
                     }
                 }
 
-                let rr_ttl_min = ctx.cfg().rr_ttl_min().map(|i| i as u32);
-                let rr_ttl_max = ctx.cfg().rr_ttl_max().map(|i| i as u32);
+                let rr_ttl_min = ctx
+                    .domain_rule
+                    .get_ref(|r| r.rr_ttl_min.as_ref())
+                    .cloned()
+                    .or_else(|| ctx.cfg().rr_ttl_min())
+                    .map(|i| i as u32);
+
+                let rr_ttl_max = ctx
+                    .domain_rule
+                    .get_ref(|r| r.rr_ttl_max.as_ref())
+                    .cloned()
+                    .or_else(|| ctx.cfg().rr_ttl_max())
+                    .map(|i| i as u32);
                 let rr_ttl_reply_max = ctx.cfg().rr_ttl_reply_max().map(|i| i as u32);
 
                 if rr_ttl_min.is_some() || rr_ttl_max.is_some() || rr_ttl_reply_max.is_some() {
@@ -105,7 +116,7 @@ impl Middleware<DnsContext, DnsRequest, DnsResponse, DnsError> for AddressMiddle
 }
 
 fn handle_rule_addr(query_type: RecordType, ctx: &DnsContext) -> Option<RData> {
-    use RecordType::{A, AAAA, HTTPS};
+    use RecordType::{A, AAAA};
 
     let cfg = ctx.cfg();
     let server_opts = ctx.server_opts();
@@ -126,7 +137,7 @@ fn handle_rule_addr(query_type: RecordType, ctx: &DnsContext) -> Option<RData> {
     }
 
     // skip address rule.
-    if server_opts.no_rule_addr() || (!query_type.is_ip_addr() && query_type != HTTPS) {
+    if server_opts.no_rule_addr() || !query_type.is_ip_addr() {
         return None;
     }
 
@@ -139,10 +150,7 @@ fn handle_rule_addr(query_type: RecordType, ctx: &DnsContext) -> Option<RData> {
             match address {
                 IPv4(ipv4) if query_type == A => return Some(RData::A(ipv4.into())),
                 IPv6(ipv6) if query_type == AAAA => return Some(RData::AAAA(ipv6.into())),
-                IPv4(_) | IPv6(_)
-                    if !no_rule_soa
-                        && (query_type == AAAA || query_type == A || query_type == HTTPS) =>
-                {
+                IPv4(_) | IPv6(_) if !no_rule_soa && (query_type == AAAA || query_type == A) => {
                     return Some(RData::default_soa())
                 }
                 SOA if !no_rule_soa => return Some(RData::default_soa()),
